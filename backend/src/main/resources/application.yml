@@ -1,12 +1,19 @@
 server:
   port: 8080
 
+workbench:
+  # 数据根目录：默认放在当前用户目录（桌面版安装到 Program Files 后仍可写）；
+  # 可用环境变量 TWB_HOME 覆盖（开发时指向 ./data 可保持旧习惯）
+  home: ${TWB_HOME:${APPDATA:${user.home}/.task-workbench}/TaskWorkbench}
+  # 文件上传目录
+  upload-dir: ${workbench.home}/uploads
+
 spring:
   application:
     name: task-workbench
   datasource:
-    # H2 文件库：数据真实落盘到 backend/data/workbench.mv.db，重启不丢失
-    url: jdbc:h2:file:./data/workbench;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL
+    # H2 文件库：数据真实落盘到 ${workbench.home}/data/workbench，重启不丢失
+    url: jdbc:h2:file:${workbench.home}/data/workbench;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
@@ -25,9 +32,6 @@ spring:
     multipart:
       max-file-size: 30MB
       max-request-size: 30MB
-
-workbench:
-  upload-dir: ./data/uploads
 
 logging:
   level:

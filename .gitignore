@@ -1,6 +1,13 @@
 # ===== 构建产物 =====
 target/
 
+# ===== 桌面打包中间产物（pkg/ 下的打包脚本保留入库） =====
+backend/build/desktop/runtime/
+backend/build/desktop/image/
+backend/build/desktop/output/
+backend/build/desktop/input/
+backend/build/desktop/install-test/
+
 # ===== 运行时数据（H2 文件库与上传文件，启动时自动重建） =====
 backend/data/
 
