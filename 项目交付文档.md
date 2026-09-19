@@ -1,0 +1,333 @@
+# 任务安排工作台 · 项目交付文档
+
+> 版本：v1.0.0　｜　交付日期：2026-09-19
+> 本文档内容全部依据当前仓库代码与实际运行结果编写，可作为交接、部署与二次开发的唯一上下文。
+
+---
+
+## 1. 项目概况
+
+**任务安排工作台**是一个面向个人/小团队的日常工作管理系统，覆盖「任务、项目、等待事项、资料、会议、日程、标签、历史、设置」九个业务域，共 10 个前端页面。系统最初为纯前端 Mock 原型，本次已升级为 **Spring Boot + H2 文件数据库的真实持久化架构**：所有增删改落库，重启不丢；文件上传真实写盘；关键操作自动留痕。
+
+- 演示数据的业务日期基准：**2026-09-15（星期二，9 月日历）**
+- 部署形态：**前后端同源单体** —— Spring Boot 在 8080 端口同时提供 `/api/**` 接口与前端静态页面，无需 Node.js、无需额外安装数据库。
+- 访问入口：<http://localhost:8080/>
+
+## 2. 技术栈
+
+| 层 | 技术 | 版本 / 说明 |
+|---|---|---|
+| 语言 | Java | **1.8**（Boot 3.x 需 JDK17，故选用 2.7.x） |
+| 框架 | Spring Boot | **2.7.18**（`javax.persistence`，非 jakarta） |
+| ORM | Spring Data JPA / Hibernate | `ddl-auto=update`，实体自动建表/更新表结构 |
+| 数据库 | H2 Database | **2.1.214，文件模式**，`MODE=MySQL`，JDBC：`jdbc:h2:file:./data/workbench` |
+| 工具库 | Lombok | 实体类 `@Data` |
+| 构建 | Maven | 3.9.x，产物名 `workbench.jar`（`finalName=workbench`） |
+| 前端 | Vue 3 | **global build**（`vendor/vue.global.prod.js`，普通 `<script>` 加载，无 import/ESM） |
+| 前端工程化 | 无 | 无 Node / npm / 打包器；原生 JavaScript（`fetch`）+ 单个 CSS 文件 |
+| 文件上传 | Spring Multipart | 单文件上限 30MB，落盘目录 `./data/uploads` |
+
+## 3. 目录结构
+
+```
+task-workbench/
+├── index.html                 # 前端源页面（10 个 section + 全部弹窗）
+├── css/style.css              # 前端样式源文件
+├── js/
+│   ├── data.js                # 仅静态配置：NAV 导航（10 项）、PROJECT_NAMES
+│   ├── api.js                 # window.API：全部后端接口封装（BASE='' 同源）
+│   └── app.js                 # Vue 应用：10 页逻辑与全部弹窗、增删改调用
+├── vendor/vue.global.prod.js  # Vue 3 生产版（本地副本，不依赖 CDN）
+└── backend/
+    ├── pom.xml                # Maven 构建文件（Spring Boot 2.7.18）
+    ├── data/                  # 【运行时生成】H2 数据库文件 + uploads/（不入库可删除重建）
+    ├── target/workbench.jar   # 【构建产物】可执行 fat jar
+    └── src/main/
+        ├── resources/
+        │   ├── application.yml          # 端口/数据源/上传等全部配置
+        │   └── static/                  # 前端构建输入（根目录前端的同步副本，打包进 jar）
+        │       ├── index.html
+        │       ├── css/style.css
+        │       ├── js/(api.js/app.js/data.js)
+        │       └── vendor/vue.global.prod.js
+        └── java/com/twb/
+            ├── WorkbenchApplication.java   # 启动类
+            ├── config/
+            │   ├── CorsConfig.java         # 全局 CORS（/api/** 全放行）
+            │   └── DataSeeder.java         # 首启种子数据（taskRepo.count()==0 时执行）
+            ├── controller/                 # 8 个 REST 控制器
+            ├── entity/                     # 15 个实体 + 2 个属性转换器
+            ├── repository/                 # 14 个 JpaRepository
+            └── service/
+                └── ActivityService.java    # 操作动态留痕
+```
+
+> **前端两处副本说明**：仓库根目录的前端文件是开发源；`backend/src/main/resources/static/` 是打包输入。**修改前端后必须同步复制到 static 再重新 package**（当前两处内容 MD5 完全一致）。
+
+## 4. 本地启动（Windows + PowerShell）
+
+### 4.1 环境要求
+
+- JDK 1.8（本机：`D:\Program Files\Java\jdk1.8.0_291`）
+- Maven 3.6+（本机 3.9.9）
+- 端口 **8080** 空闲
+
+### 4.2 打包并启动
+
+```powershell
+cd e:\AIProject\workP\task-workbench\backend
+
+# 如系统默认 JDK 不是 1.8，先指定：
+$env:JAVA_HOME = 'D:\Program Files\Java\jdk1.8.0_291'
+
+mvn clean package -DskipTests
+java -jar target\workbench.jar
+```
+
+启动约 10～20 秒，浏览器打开 <http://localhost:8080/> 即可。
+
+### 4.3 改前端代码后的发布步骤
+
+```powershell
+# 在仓库根目录 task-workbench 下，把前端源按目录结构同步到 static 后重新打包
+$st = 'backend\src\main\resources\static'
+Copy-Item index.html $st -Force
+Copy-Item css, js, vendor $st -Recurse -Force
+cd backend; mvn clean package -DskipTests
+```
+
+### 4.4 数据查看与重置
+
+- **H2 控制台**：<http://localhost:8080/h2-console>
+  - JDBC URL：`jdbc:h2:file:./data/workbench`；用户名 `sa`；密码为空
+- **重置全部演示数据**：停止服务 → 删除 `backend/data/` 目录 → 重新启动，`DataSeeder` 会自动重建库并灌入初始数据。
+- 上传的文件保存在 `backend/data/uploads/`，文件名格式为 `{32位UUID}_{原始文件名}`。
+
+## 5. 功能模块（10 个页面）
+
+| # | 页面 | 功能说明（均已接真实接口） |
+|---|---|---|
+| 1 | 首页 | 今日待办勾选、本周重点、等待回复与资料速览、今日日程时间线、8 张聚合统计卡 |
+| 2 | 任务管理 | 任务列表（状态/优先级/负责人/截止文案）、新建/编辑/删除、状态切换、本周重点 |
+| 3 | 项目进度 | 6 个项目卡片、进度条、阶段节点（done/doing/blocked/todo）、里程碑时间轴、风险列表、新建项目 |
+| 4 | 等待回复 | 3 张汇总卡（等待中/平均等待时长/已回复）、新增、标记已回复、重新等待、编辑、删除；导航角标实时联动 |
+| 5 | 资料整理 | 类型 Tab（全部/文档/表格/PDF/演示文稿）、**真实文件上传**、下载、删除（连磁盘文件）、手工登记 |
+| 6 | 会议纪要 | 分类 Tab、卡片列表、新建/编辑/删除、详情弹窗（多行纪要按 `pre-line` 保留换行） |
+| 7 | 日程安排 | 9 月月历格 + 事件彩色圆点、当日时间线、新建日程（日期/时间/时长/颜色/备注） |
+| 8 | 标签分类 | 标签卡片（7 色）、关联任务数统计与任务名、新建/编辑（选色+勾选任务）/删除 |
+| 9 | 历史记录 | 操作动态按日期分组的时间线，彩色类型标签（任务/项目/日程/等待/资料/会议/标签/系统） |
+| 10 | 设置 | 工作台名称/角色/签名、上班时间、每周起始日、3 个通知开关、存储信息展示；保存后顶栏用户名联动并持久化 |
+
+**枚举约定**
+
+- 任务状态：`pending / doing / waiting / blocked / done`；优先级：`high / mid / low`
+- 项目状态：`doing / risk / done / todo`；项目阶段：`done / doing / blocked / todo`
+- 等待事项：`waiting / done`
+- 头像色：`c-blue / c-green / c-orange / c-purple / c-red / c-cyan / c-pink / c-indigo`
+- 标签色：`blue / green / orange / purple / red / cyan / pink`；日程色：`blue / red / orange / green / purple / gray`
+
+## 6. HTTP 接口清单
+
+全部接口前缀 `/api`，请求/响应均为 JSON（文件上传/下载除外）。删除类接口统一返回 `{"ok": true}`。
+
+### 6.1 任务 / 待办 / 已完成 / 重点（TaskController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/tasks` | 任务列表（按 sortTs 升序） |
+| POST | `/tasks` | 新建任务（默认 status=pending、sortTs=99、urgent=false），写动态 |
+| PUT | `/tasks/{id}` | 更新任务（非空字段合并） |
+| PATCH | `/tasks/{id}/status?status=` | 修改任务状态；置 done 时记「完成任务」动态 |
+| DELETE | `/tasks/{id}` | 删除任务，写动态 |
+| GET | `/home-todos` | 首页今日待办 |
+| POST | `/home-todos` | 新增待办 |
+| PATCH | `/home-todos/{id}` | 更新待办（done/status/name） |
+| DELETE | `/home-todos/{id}` | 删除待办 |
+| GET | `/done-tasks` | 已完成列表（finishTime 倒序） |
+| POST | `/done-tasks` | 新增已完成记录 |
+| DELETE | `/done-tasks/{id}` | 删除已完成记录 |
+| GET | `/focus?scope=home\|tasks` | 重点事项（默认 home） |
+| POST | `/focus` | 新增重点（默认 scope=home） |
+| DELETE | `/focus/{id}` | 删除重点 |
+
+### 6.2 项目 / 里程碑 / 风险（ProjectController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/projects` | 项目列表（含 stages 阶段，EAGER 加载） |
+| POST | `/projects` | 新建项目（默认 progress=0、status=doing），写动态 |
+| PUT | `/projects/{id}` | 更新项目（含整表替换 stages） |
+| DELETE | `/projects/{id}` | 删除项目（级联删阶段），写动态 |
+| GET / POST | `/milestones` | 里程碑列表（按 day 升序）/ 新增 |
+| DELETE | `/milestones/{id}` | 删除里程碑 |
+| GET / POST | `/risks` | 风险列表 / 新增 |
+| DELETE | `/risks/{id}` | 删除风险 |
+
+### 6.3 日程（EventController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/events` | 全部日程（按 dkey+start 排序；前端按日期 key 过滤） |
+| POST | `/events` | 新建日程，写动态 |
+| PUT | `/events/{id}` | 更新日程 |
+| DELETE | `/events/{id}` | 删除日程，写动态（前端当前无删除入口，可直接调接口清理） |
+
+### 6.4 等待回复（WaitingController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/waiting` | 等待事项列表 |
+| POST | `/waiting` | 新增（默认 status=waiting、days=0），写动态 |
+| PUT | `/waiting/{id}` | 编辑（name/source/days/status） |
+| PATCH | `/waiting/{id}/status?status=waiting\|done` | 状态切换；置 done 时记「已收到回复」动态 |
+| DELETE | `/waiting/{id}` | 删除 |
+
+### 6.5 资料文件（FileController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/files` | 资料元数据列表（time 倒序） |
+| POST | `/files` | 手工登记一条资料记录（不落盘文件） |
+| POST | `/files/upload` | **multipart 上传**，表单字段名 `file`；文件落盘并自动识别类型/应用/大小/颜色，写动态 |
+| GET | `/files/{id}/raw` | 下载原始文件（attachment 方式） |
+| DELETE | `/files/{id}` | 删除元数据 **并删除磁盘文件**，写动态 |
+
+类型按扩展名推断：xls/xlsx/csv→表格，pdf→PDF，ppt/pptx→演示文稿，png/jpg/jpeg→图片，其余→文档。
+
+### 6.6 会议纪要（MeetingController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/meetings` | 纪要列表（date 倒序） |
+| POST | `/meetings` | 新建纪要，写动态 |
+| PUT | `/meetings/{id}` | 编辑纪要 |
+| DELETE | `/meetings/{id}` | 删除纪要 |
+
+### 6.7 标签（TagController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/tags` | 标签列表（taskIds 为关联任务 ID 数组） |
+| POST | `/tags` | 新建标签（默认 color=blue），写动态 |
+| PUT | `/tags/{id}` | 编辑标签（名称/颜色/关联任务） |
+| DELETE | `/tags/{id}` | 删除标签 |
+
+### 6.8 统计 / 动态 / 设置（SystemController）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/stats` | 聚合统计，返回 `{home:{…}, tasks:{…}, projects:{…}}`，页面所有统计卡均取自此接口 |
+| GET | `/activities` | 历史动态（id 倒序） |
+| GET | `/settings` | 全部设置键值对 |
+| PUT | `/settings` | 批量保存设置（JSON 对象，逐键 upsert），并写一条「更新了系统设置」动态 |
+
+当前 `/api/stats` 初始数据返回：
+
+```json
+{
+  "home":     {"todayTodo":6,"nearDeadline":3,"weekFocus":8,"weekDone":0,"waiting":5,"avgWait":2.2,"done":8,"todayDone":4},
+  "tasks":    {"all":13,"doing":3,"today":6,"waiting":5,"blocked":3,"done":8},
+  "projects": {"all":6,"healthy":3,"risk":2,"done":1}
+}
+```
+
+## 7. 数据库设计
+
+Hibernate `ddl-auto=update` 启动时按实体自动建表，共 **15 张表**。字段中大量「时间/日期」为展示用字符串（如 `今天 10:00`、`2026-09-15`、`2026-09-15 11:20`），非数据库时间类型。
+
+### 7.1 表字段一览
+
+| 表 | 实体 | 主要字段（id 主键均为 BIGINT 自增，省略不列） |
+|---|---|---|
+| `task` | Task | name, priority, deadline, sort_ts, status, owner, color, next, project, tags（逗号串）, urgent |
+| `home_todo` | HomeTodo | name, priority, deadline, status, urgent, done |
+| `done_task` | DoneTask | name, finish_time, cost, owner, color, project |
+| `focus_item` | FocusItem | scope(home/tasks), name, status |
+| `project` | Project | name, owner, tone, progress, status, start_day, end_day, tasks_done, tasks_total |
+| `project_stage` | Stage | name, **start_day, end_day**, progress, status, owner, project_id, pos（阶段顺序） |
+| `milestone` | Milestone | **day_of_month**, title, proj, level(risk/plan/done) |
+| `project_risk` | ProjectRisk | level(high/mid), title, desc(500), proj |
+| `schedule_event` | ScheduleEvent | dkey(如 2026-9-15), start(如 09:00), title, desc, dur, color |
+| `waiting_item` | WaitingItem | name, source, days, status |
+| `file_asset` | FileAsset | name, type, time, size, owner, color, app, path（磁盘文件名） |
+| `meeting` | Meeting | title, date, organizer, attendees, summary(2000), tag |
+| `tag` | Tag | name, color, task_ids（逗号分隔的任务 ID 串，500） |
+| `activity` | Activity | time, type, text, operator |
+| `setting` | Setting | **k（主键，字符串）**, v(500) |
+
+### 7.2 关联与转换
+
+- `project` 1—N `project_stage`：`@OneToMany(cascade=ALL, orphanRemoval=true, fetch=EAGER)`，外键 `project_id`，顺序列 `pos`。**必须 EAGER**——否则 Controller 序列化阶段会因 Session 已关闭报懒加载异常。
+- `task.tags`（List&lt;String&gt;）经 `StringListConverter` 与逗号分隔字符串互转。
+- `tag.task_ids`（List&lt;Long&gt;）经 `LongListConverter` 与逗号分隔 ID 串互转；标签与任务是**软关联**。
+- 任务的 `project` 字段存项目名称（软关联），非外键。
+- H2 保留字规避：`Milestone.day` 映射列名 `day_of_month`；`Stage.start/end` 映射 `start_day/end_day`（Java 属性名不变）。
+
+## 8. 初始演示数据（DataSeeder）
+
+`config/DataSeeder.java` 是 `CommandLineRunner`，**仅当 task 表为空时执行一次**，之后重启保留用户数据。初始数据量：
+
+| 表 | 条数 | 备注 |
+|---|---|---|
+| task | 13 | 含今日待办 6、进行中 3、等待 5、受阻 3 等状态分布 |
+| home_todo | 6 | 3 条加急 |
+| project | 6 | 每个项目带 3～5 个阶段（健康 3 / 风险 2 / 完成 1） |
+| milestone | 6 | level：risk/plan/done |
+| project_risk | 3 | high/mid |
+| schedule_event | 20 | 9 月多日日程，9-15 当天 8 条 |
+| waiting_item | 5 | 平均等待 2.2 天 |
+| file_asset | 5 | 仅元数据（path 为空，对应无磁盘文件，演示列表用） |
+| done_task | 8 | 其中 4 条 finish_time 为 2026-09-15 |
+| meeting | 3 | 例会/客户/评审各 1 |
+| tag | 5 | 关联任务数 3/4/2/1/3 |
+| focus_item | 13 | 首页 8 条 + 任务页 5 条 |
+| setting | 9 | userName、role、signature、workStart、weekStart、notifyBell、notifyEmail、overtimeRemind、dataStorage |
+| activity | 5 | 各业务类型各一条示例动态 |
+
+## 9. 前端实现说明
+
+- **无构建工具**：`index.html` 按 `vendor/vue.global.prod.js → js/data.js → js/api.js → js/app.js` 顺序普通引入；应用挂载在 `#app`。
+- `js/data.js` 只保留 `NAV`（10 项导航，等待页 `badge:'wait'`）与 `PROJECT_NAMES` 两个静态常量，不含任何业务数据。
+- `js/api.js` 暴露全局 `window.API`，`BASE=''`（同源），封装全部接口；`uploadUrl='/api/files/upload'`，`downloadUrl(id)=/api/files/{id}/raw`。
+- `js/app.js`：`data()` 中业务集合初始为空数组，`mounted` 调 `refresh()` 并行拉取全部接口；所有增删改成功后调用对应接口并局部刷新；统计卡全部绑定 `/api/stats`；顶栏用户名绑定设置项。
+- 字段映射易错点（已处理）：等待事项用 `source`（非 from）；项目用 `startDay/endDay`；日程用 `start`（非 time）。
+- 全局 CORS 已放行 `/api/**`（GET/POST/PUT/DELETE/PATCH/OPTIONS），因此前端也可用任意独立静态服务器打开，仅需把 `api.js` 的 BASE 指向 `http://localhost:8080`；当前同源部署无需改动。
+
+## 10. 配置项说明（application.yml）
+
+| 配置 | 当前值 | 说明 |
+|---|---|---|
+| `server.port` | 8080 | 服务端口 |
+| `spring.datasource.url` | `jdbc:h2:file:./data/workbench;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL` | 文件库，相对**启动工作目录**；`AUTO_SERVER` 允许 H2 工具并发连接 |
+| `spring.datasource.username/password` | `sa` / 空 | |
+| `spring.jpa.hibernate.ddl-auto` | update | 改实体只增不减列；**变更表结构后如需干净重建请删除 data 目录** |
+| `spring.jpa.open-in-view` | false | 故 Project.stages 采用 EAGER |
+| `spring.h2.console` | enabled, path=/h2-console | 数据库 Web 控制台 |
+| `spring.servlet.multipart.max-file-size` | 30MB | 上传大小限制（请求总大小同为 30MB） |
+| `workbench.upload-dir` | ./data/uploads | 上传文件目录，启动时自动创建 |
+
+## 11. 已交付能力与边界说明
+
+**已完整交付并实测通过**
+
+- 10 个页面全部由真实接口驱动；任务/项目/等待/会议/标签/日程/设置的增删改全部落库，刷新与重启后不丢。
+- 文件上传 multipart 真实写盘、下载、删除连磁盘清理；操作自动写入历史动态。
+- 浏览器端全链路实测：等待事项闭环、会议新建/详情换行/编辑回填/删除、标签选色与任务关联计数、日程日历点与时间线、设置保存联动与刷新持久化等；测试期间 73 次接口调用无 4xx/5xx。交付前已删除 data 目录重新播种，当前库为纯净初始数据（13/6/8/6/20/5/5/3/5/6/3/13/9/5）。
+
+**当前边界（按代码现状如实说明，非缺陷登记）**
+
+1. 无登录、鉴权与用户体系，所有操作人取实体 owner 字段或默认「我」；CORS 全放行、H2 控制台开启且空密码 —— **仅限本机/内网演示使用**，若上公网需先关闭 h2-console、收紧 CORS 并增加认证。
+2. 日程前端页面没有删除按钮（后端 `DELETE/PUT /events/{id}` 已具备）。
+3. 业务时间为展示字符串；`/api/stats` 中「今日完成」按种子基准日 `2026-09-15` 前缀统计，非动态当天。
+4. 标签↔任务为 taskIds 软关联，删除任务不会自动清理标签中的 ID。
+5. 种子资料（5 条 file_asset）为纯元数据，path 为空，点下载会返回 404；上传产生的资料可正常下载。
+6. 前端两处副本（根目录 与 `backend/.../static/`）需手工保持同步，无自动构建。
+
+## 12. 常见问题
+
+- **启动报端口占用**：`Get-NetTCPConnection -LocalPort 8080` 查占用进程，`Stop-Process -Id <PID> -Force` 结束后重启。
+- **改了实体字段不生效/建表报错**：`ddl-auto=update` 不会删除旧列；停止服务后删除 `backend/data/` 重启即可全新建库（种子数据会自动重建）。
+- **PowerShell 5.1 调接口**：没有 `Invoke-RestMethod -Form`，上传文件请用 `curl.exe -F "file=@路径" http://localhost:8080/api/files/upload`。
+- **控制台中文显示乱码**：只是 PowerShell 控制台编码问题，浏览器与数据库内中文正常。
+- **前端改动不生效**：确认已复制到 `backend/src/main/resources/static/` 并重新 `mvn package`、重启服务（浏览器可 Ctrl+F5 清缓存）。
+- **H2 工具连库**：JDBC URL 需带 `AUTO_SERVER=TRUE` 才能在服务运行时并发连接。
